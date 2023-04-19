@@ -23,12 +23,21 @@ export function clearCredentials() {
 }
 
 export function isLoggedIn() {
-  return (
-    true &&
-    !!localStorage.getItem("username") &&
-    !!localStorage.getItem("token") &&
-    !!localStorage.getItem("npm")
-  )
+  const username = localStorage.getItem("username")
+  const uiToken = localStorage.getItem("token")
+  const npmToken = localStorage.getItem("npm")
+
+  if (!username || !uiToken || !npmToken) {
+    return false
+  }
+
+  // Attempt to parse the UI token and check its exp field
+  try {
+    const { exp } = JSON.parse(atob(uiToken.split('.')[1]))
+    return exp > (Date.now() / 1000)
+  } catch(err) {
+    return false
+  }
 }
 
 export function validateCredentials(credentials: Credentials) {
