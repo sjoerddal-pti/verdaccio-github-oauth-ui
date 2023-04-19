@@ -13,6 +13,10 @@ function saveAndRemoveCookies() {
     return
   }
 
+  localStorage.removeItem('username')
+  localStorage.removeItem('token')
+  localStorage.removeItem('npm')
+
   const credentials: Credentials = parseCookies(document.cookie) as any
   if (!validateCredentials(credentials)) {
     return
