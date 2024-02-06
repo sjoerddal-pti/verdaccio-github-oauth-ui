@@ -13,10 +13,13 @@ function saveAndRemoveCookies() {
     return
   }
 
+<<<<<<< HEAD
   localStorage.removeItem('username')
   localStorage.removeItem('token')
   localStorage.removeItem('npm')
 
+=======
+>>>>>>> upstream/master
   const credentials: Credentials = parseCookies(document.cookie) as any
   if (!validateCredentials(credentials)) {
     return
@@ -57,7 +60,11 @@ export function init(options: InitOptions) {
 
   interruptClick(logoutButton, () => {
     clearCredentials()
-    location.href = logoutHref
+    if (location.pathname === logoutHref) {
+      location.reload()
+    } else {
+      location.href = logoutHref
+    }
   })
 
   document.addEventListener("click", () => retry(updateUsageInfo))
