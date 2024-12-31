@@ -4,6 +4,8 @@
 // thinks we are logged in.
 //
 
+import { parseJwt } from "./lib"
+
 export interface Credentials {
   username: string
   uiToken: string
@@ -38,6 +40,22 @@ export function isLoggedIn() {
   } catch(err) {
     return false
   }
+}
+
+export function isTokenExpired() {
+  const token = localStorage.getItem("token")
+  if (typeof token !== "string") {
+    return true
+  }
+
+  const payload = parseJwt(token)
+  if (!payload) {
+    return true
+  }
+
+  // Report as expired before (real expiry - 30s)
+  const jsTimestamp = payload.exp * 1000 - 30000
+  return Date.now() >= jsTimestamp
 }
 
 export function validateCredentials(credentials: Credentials) {
