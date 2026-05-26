@@ -37,13 +37,10 @@ clean() {
 # Build server, config and client
 #
 build() {
-  # https://github.com/parcel-bundler/parcel/issues/8005#issuecomment-1120149358
-  export NODE_OPTIONS=--no-experimental-fetch
-
   # bundle with parcel
-  run build yarn parcel build --target client &
-  run build yarn parcel build --target server &
-  run build yarn parcel build --target cli &
+  run build bun parcel build --target client &
+  run build bun parcel build --target server &
+  run build bun parcel build --target cli &
   wait
 
   # add node shebang
@@ -63,10 +60,10 @@ copy() {
 }
 
 typecheck() {
-  run typecheck yarn tsc --noEmit --project src/client/tsconfig.json &
-  run typecheck yarn tsc --noEmit --project src/server/tsconfig.json &
-  run typecheck yarn tsc --noEmit --project src/cli/tsconfig.json &
-  run typecheck yarn tsc --noEmit --project test/tsconfig.json &
+  run typecheck bun tsc --noEmit --project src/client/tsconfig.json &
+  run typecheck bun tsc --noEmit --project src/server/tsconfig.json &
+  run typecheck bun tsc --noEmit --project src/cli/tsconfig.json &
+  run typecheck bun tsc --noEmit --project test/tsconfig.json &
   wait
 }
 
@@ -94,13 +91,18 @@ cli-publish() {
   run cli-publish mkdir -p "$directory"
   echo "{\"name\":\"oauth-cli-test\",\"version\":\"$packageName\",\"license\":\"UNLICENSED\"}" > "$directory/package.json"
   run cli-publish cd "$directory"
-  run cli-publish npm publish --registry http://localhost:4873
+  run cli-publish npm publish --registry http://localhost:4873 --tag test
+}
+
+cli-unpublish() {
+  run cli-unpublish npm unpublish --registry http://localhost:4873 --tag test
 }
 
 cli() {
   cli-login
   cli-whoami
   cli-publish
+  cli-unpublish
 }
 
 docker_() {

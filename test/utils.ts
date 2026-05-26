@@ -1,11 +1,9 @@
-import { AllowAccess, RemoteUser } from "@verdaccio/types"
+import { AllowAccess, PackageAccess, RemoteUser } from "@verdaccio/types"
 import { Request } from "express"
 import { authenticatedUserGroups, pluginKey } from "src/constants"
-import { AuthCore } from "src/server/plugin/AuthCore"
 import { AuthProvider } from "src/server/plugin/AuthProvider"
 import {
-  Config,
-  PackageAccess,
+  VerdaccioGithubOauthConfig,
   ParsedPluginConfig,
   PluginConfig,
 } from "src/server/plugin/Config"
@@ -14,6 +12,7 @@ import { Verdaccio } from "src/server/plugin/Verdaccio"
 import timekeeper from "timekeeper"
 import Auth from "verdaccio/build/lib/auth"
 import { afterEach, beforeEach, vi } from "vitest"
+import { PartialDeep } from "type-fest"
 
 export const testOrgGroup = `github/org/TEST_ORG`
 export const testOrgTeamGroup = `github/org/TEST_ORG/team/TEST_TEAM`
@@ -53,7 +52,7 @@ export const testUiToken = "UI_TOKEN"
 export const testNpmToken = "NPM_TOKEN"
 export const testErrorMessage = "EXPECTED_ERROR"
 
-export const testUser = createTestUser(testProviderGroups)
+export const testUser = createTestUser()
 
 export function createTestPluginConfig(
   pluginConfig?: Partial<PluginConfig>,
@@ -67,7 +66,7 @@ export function createTestPluginConfig(
 }
 
 export function createTestVerdaccioConfig(
-  verdaccioConfig: Partial<Config> = {},
+  verdaccioConfig: PartialDeep<VerdaccioGithubOauthConfig> = {},
   pluginConfig: Partial<PluginConfig> = {},
 ) {
   return {
@@ -86,7 +85,7 @@ export function createTestVerdaccioConfig(
       ...verdaccioConfig.packages,
     },
     ...verdaccioConfig,
-  } as Config
+  } as VerdaccioGithubOauthConfig
 }
 
 export function createTestParsedPluginConfig(
@@ -96,7 +95,9 @@ export function createTestParsedPluginConfig(
   return new ParsedPluginConfig(verdaccioConfig)
 }
 
-export function createTestVerdaccio(config: Partial<Config> = {}) {
+export function createTestVerdaccio(
+  config: Partial<VerdaccioGithubOauthConfig> = {},
+) {
   const verdaccio = new Verdaccio(createTestVerdaccioConfig(config))
   verdaccio.issueUiToken = vi.fn(() => Promise.resolve(testUiToken))
   verdaccio.issueNpmToken = vi.fn(() => Promise.resolve(testNpmToken))
@@ -133,22 +134,17 @@ export function createTestAuthProvider() {
   return provider
 }
 
-export function createTestAuthCore(config: Partial<Config> = {}) {
-  return new AuthCore(
-    createTestVerdaccio(config),
-    new ParsedPluginConfig(createTestVerdaccioConfig(config)),
-  )
-}
-
-export function createTestPlugin(config: Partial<Config> = {}) {
+export function createTestPlugin(
+  config: Partial<VerdaccioGithubOauthConfig> = {},
+) {
   return new Plugin(createTestVerdaccioConfig(config))
 }
 
-export function createTestUser(groups: string[]): RemoteUser {
+export function createTestUser(): RemoteUser {
   return {
     name: testUserName,
-    groups: [...authenticatedUserGroups, ...groups],
-    real_groups: [...groups],
+    groups: [...authenticatedUserGroups],
+    real_groups: [],
   }
 }
 
@@ -163,8 +159,8 @@ export function createTestPackage(
 
 // @ts-ignore ignore private method override error.
 class PatchedAuth extends Auth {
-  constructor(config: any) {
-    super(config)
+  constructor(config: any, logger: any, options: any) {
+    super(config, logger, options)
   }
 
   // Avoid actually trying to load plugins.
@@ -173,8 +169,17 @@ class PatchedAuth extends Auth {
   }
 }
 
-export function createRealVerdaccioAuth(config: Partial<Config> = {}): Auth {
-  return new PatchedAuth({ secret: "test-secret", ...config }) as any
+export function createRealVerdaccioAuth(
+  config: Partial<VerdaccioGithubOauthConfig> = {},
+): Auth {
+  return new PatchedAuth(
+    {
+      secret: "a".repeat(32 /* TOKEN_VALID_LENGTH */),
+      ...config,
+    },
+    {},
+    {},
+  ) as any
 }
 
 export function freezeTimeDuringTests(date: Date = new Date(0)) {

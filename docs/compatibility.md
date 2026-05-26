@@ -1,6 +1,10 @@
-# Compatibility
+# 🗃️ Compatibility
 
-- Verdaccio 5.0 - 5.27
-- Node 16, 18, 20
-- npm 7+
-- Browsers: See [browserslist](../.browserslistrc)
+| Requirement   | Details                                   |
+| ------------- | ----------------------------------------- |
+| **Verdaccio** | 6.x                                       |
+| **Node.js**   | 20, 22, 24                                |
+| **npm**       | 10                                        |
+| **Browsers**  | See [.browserslistrc](../.browserslistrc) |
+
+Note: Other versions may be compatible, but only these versions have been tested.

@@ -1,13 +1,13 @@
 import { JWTSignOptions, RemoteUser } from "@verdaccio/types"
 import merge from "lodash/merge"
-import { VerdaccioConfig } from "../plugin/Config"
+import { VerdaccioGithubOauthConfig } from "./Config"
 
 import type Auth from "verdaccio/build/lib/auth"
 
 export type User = RemoteUser
 export { Auth }
 
-// Most of this is duplicated Verdaccio code because it is unfortunately not availabel via API.
+// Most of this is duplicated Verdaccio code because it is unfortunately not available via API.
 // https://github.com/verdaccio/verdaccio/blob/master/src/lib/auth-utils.ts#L129
 
 const TIME_EXPIRATION_7D = "7d" as const
@@ -24,19 +24,23 @@ const defaultSecurity = {
   },
 } as const
 
-function getSecurity(config: VerdaccioConfig) {
+function getSecurity(config: VerdaccioGithubOauthConfig) {
   return merge({}, defaultSecurity, config.security)
 }
+
+type Security = ReturnType<typeof getSecurity>
 
 /**
  * Abstract Verdaccio version differences and usage of all Verdaccio objects.
  */
 export class Verdaccio {
-  readonly security = getSecurity(this.config)
+  readonly security: Security
 
   private auth!: Auth
 
-  constructor(private readonly config: VerdaccioConfig) {}
+  constructor(private readonly config: VerdaccioGithubOauthConfig) {
+    this.security = getSecurity(this.config)
+  }
 
   setAuth(auth: Auth): Verdaccio {
     this.auth = auth
@@ -45,7 +49,6 @@ export class Verdaccio {
 
   async issueNpmToken(user: User, token: string) {
     const jwtSignOptions = this.security?.api?.jwt?.sign
-
     if (jwtSignOptions) {
       return this.issueVerdaccio4PlusJWT(user, jwtSignOptions)
     } else {
@@ -67,7 +70,17 @@ export class Verdaccio {
     return this.auth.jwtEncrypt(user, jwtSignOptions)
   }
 
-  private encrypt(text: string) {
-    return this.auth.aesEncrypt(Buffer.from(text)).toString("base64")
+  private encrypt(text: string): string {
+    try {
+      // @ts-expect-error: Argument of type 'Buffer<ArrayBuffer>' is not assignable to parameter of type 'string'.ts(2345)
+      return this.auth.aesEncrypt(Buffer.from(text)).toString("base64")
+    } catch (error) {
+      if (String(error).includes("TypeError")) {
+        // Newer versions of Verdaccio accept a string instead of a buffer and
+        // output base64. I don't get why these APIs keep changing.
+        return this.auth.aesEncrypt(text) ?? ""
+      }
+      throw error
+    }
   }
 }

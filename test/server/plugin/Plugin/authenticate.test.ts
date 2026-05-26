@@ -4,10 +4,15 @@ import {
   createTestAuthProvider,
   createTestPlugin,
   testOAuthToken,
-  testProviderGroups,
   testUserName,
 } from "test/utils"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+
+vi.mock("src/server/github/AuthProvider", () => ({
+  GitHubAuthProvider: vi.fn().mockImplementation(function () {
+    return createTestAuthProvider()
+  }),
+}))
 
 describe("Plugin", () => {
   describe("authenticate", () => {
@@ -15,12 +20,6 @@ describe("Plugin", () => {
 
     beforeEach(() => {
       plugin = createTestPlugin()
-
-      vi.mock("src/server/github/AuthProvider", () => ({
-        GitHubAuthProvider: vi
-          .fn()
-          .mockImplementation(() => createTestAuthProvider()),
-      }))
     })
 
     afterEach(() => {
@@ -51,7 +50,7 @@ describe("Plugin", () => {
     it("valid user name and token can authenticate", async () => {
       await plugin.authenticate(testUserName, testOAuthToken, (err, groups) => {
         expect(err).toBeNull()
-        expect(groups).toEqual(expect.arrayContaining(testProviderGroups))
+        expect(groups).toEqual([])
       })
     })
   })

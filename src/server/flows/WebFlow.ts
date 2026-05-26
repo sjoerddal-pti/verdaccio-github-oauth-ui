@@ -1,15 +1,16 @@
-import { IPluginMiddleware } from "@verdaccio/types"
 import { Application, Handler, Request } from "express"
 
 import { logger } from "../../logger"
 import { getAuthorizePath, getCallbackPath } from "../../redirect"
 import { buildErrorPage } from "../../statusPage"
-import { AuthCore } from "../plugin/AuthCore"
 import { AuthProvider } from "../plugin/AuthProvider"
 import { ParsedPluginConfig } from "../plugin/Config"
-import { mapValues } from "lodash"
 import { Verdaccio } from "../plugin/Verdaccio"
-import { getBaseUrl } from "../helpers"
+import {
+  createAuthenticatedUser,
+  getBaseUrl,
+  IPluginMiddleware,
+} from "../helpers"
 
 const COOKIE_OPTIONS = {
   sameSite: true,
@@ -17,13 +18,20 @@ const COOKIE_OPTIONS = {
   maxAge: 1000 * 10, // Expire quickly as these get saved to localStorage anyway
 }
 
-export class WebFlow implements IPluginMiddleware<any> {
+export class WebFlow implements IPluginMiddleware {
+  private readonly verdaccio: Verdaccio
+  private readonly config: ParsedPluginConfig
+  private readonly provider: AuthProvider
+
   constructor(
-    private readonly verdaccio: Verdaccio,
-    private readonly config: ParsedPluginConfig,
-    private readonly core: AuthCore,
-    private readonly provider: AuthProvider,
-  ) {}
+    verdaccio: Verdaccio,
+    config: ParsedPluginConfig,
+    provider: AuthProvider,
+  ) {
+    this.verdaccio = verdaccio
+    this.config = config
+    this.provider = provider
+  }
 
   /**
    * IPluginMiddleware
@@ -68,8 +76,7 @@ export class WebFlow implements IPluginMiddleware<any> {
       const code = this.provider.getCode(req)
       const githubToken = await this.provider.getToken(code)
       const userName = await this.provider.getUserName(githubToken)
-      const userGroups = await this.provider.getGroups(userName)
-      const user = await this.core.createAuthenticatedUser(userName, userGroups)
+      const user = createAuthenticatedUser(userName)
       const uiToken = await this.verdaccio.issueUiToken(user)
       const npmToken = await this.verdaccio.issueNpmToken(user, githubToken)
 

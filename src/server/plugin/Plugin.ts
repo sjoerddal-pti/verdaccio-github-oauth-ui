@@ -1,39 +1,61 @@
-import {
-  AllowAccess,
-  AuthAccessCallback,
-  AuthCallback,
-  IPluginAuth,
-  IPluginMiddleware,
-  RemoteUser,
-} from "@verdaccio/types"
+import { AllowAccess, PackageAccess, RemoteUser } from "@verdaccio/types"
+import { pluginUtils, errorUtils } from "@verdaccio/core"
 import { Application } from "express"
 import { logger } from "../../logger"
 import { CliFlow, WebFlow } from "../flows"
 import { GitHubAuthProvider } from "../github"
-import { AuthCore } from "./AuthCore"
 import { Cache } from "./Cache"
-import { Config, PackageAccess, ParsedPluginConfig } from "./Config"
+import { VerdaccioGithubOauthConfig, ParsedPluginConfig } from "./Config"
 import { PatchHtml } from "./PatchHtml"
-import { registerGlobalProxyAgent } from "./ProxyAgent"
 import { ServeStatic } from "./ServeStatic"
 import { Verdaccio } from "./Verdaccio"
+import { createAuthenticatedUser } from "../helpers"
+
+type Package = PackageAccess & (AllowAccess | VerdaccioGithubOauthConfig)
+type Action = "access" | "publish" | "unpublish"
+
+function logAccess(
+  user: RemoteUser,
+  pkg: Package,
+  action: Action,
+  grant: boolean,
+) {
+  logger.debug({
+    package: pkg.name,
+    action: action,
+    user: user.name,
+    grant: grant,
+  })
+}
 
 /**
  * Implements the verdaccio plugin interfaces.
  */
-export class Plugin implements IPluginMiddleware<any>, IPluginAuth<any> {
-  private readonly parsedConfig = new ParsedPluginConfig(this.config)
-  private readonly provider = new GitHubAuthProvider(this.parsedConfig)
-  private readonly cache = new Cache(this.provider)
-  private readonly verdaccio = new Verdaccio(this.config)
-  private readonly core = new AuthCore(this.verdaccio, this.parsedConfig)
+export class Plugin
+  extends pluginUtils.Plugin<VerdaccioGithubOauthConfig>
+  implements
+    pluginUtils.ExpressMiddleware<VerdaccioGithubOauthConfig, any, any>,
+    pluginUtils.Auth<VerdaccioGithubOauthConfig>
+{
+  private readonly parsedConfig: ParsedPluginConfig
+  private readonly provider: GitHubAuthProvider
+  private readonly cache: Cache
+  private readonly verdaccio: Verdaccio
 
-  constructor(private readonly config: Config) {
-    registerGlobalProxyAgent()
+  constructor(
+    readonly config: VerdaccioGithubOauthConfig,
+    options?: any,
+  ) {
+    super(config, options)
+
+    this.parsedConfig = new ParsedPluginConfig(this.config)
+    this.provider = new GitHubAuthProvider(this.parsedConfig)
+    this.cache = new Cache(this.provider, this.parsedConfig.cacheTTLms)
+    this.verdaccio = new Verdaccio(this.config)
   }
 
   /**
-   * IPluginMiddleware
+   * pluginUtils.ExpressMiddleware
    */
   register_middlewares(app: Application, auth: any) {
     this.verdaccio.setAuth(auth)
@@ -41,8 +63,8 @@ export class Plugin implements IPluginMiddleware<any>, IPluginAuth<any> {
     const children = [
       new ServeStatic(),
       new PatchHtml(this.parsedConfig),
-      new WebFlow(this.verdaccio, this.parsedConfig, this.core, this.provider),
-      new CliFlow(this.verdaccio, this.core, this.provider),
+      new WebFlow(this.verdaccio, this.parsedConfig, this.provider),
+      new CliFlow(this.verdaccio, this.provider),
     ]
 
     for (const child of children) {
@@ -68,12 +90,12 @@ export class Plugin implements IPluginMiddleware<any>, IPluginAuth<any> {
   }
 
   /**
-   * IPluginAuth
+   * pluginUtils.Auth
    */
   async authenticate(
     userName: string,
     userToken: string,
-    callback: AuthCallback,
+    callback: pluginUtils.AuthCallback,
   ): Promise<void> {
     try {
       if (
@@ -85,8 +107,7 @@ export class Plugin implements IPluginMiddleware<any>, IPluginAuth<any> {
         return
       }
 
-      const userGroups = await this.cache.getGroups(userName)
-      const user = await this.core.createAuthenticatedUser(userName, userGroups)
+      const user = createAuthenticatedUser(userName)
 
       callback(null, user.real_groups)
     } catch (error) {
@@ -94,19 +115,75 @@ export class Plugin implements IPluginMiddleware<any>, IPluginAuth<any> {
     }
   }
 
+  private async _allow(
+    user: RemoteUser,
+    pkg: Package,
+    action: Action,
+    callback: pluginUtils.AccessCallback,
+  ) {
+    if (!user.name) {
+      // let other auth plugins and verdaccio's default handler deal with unauthenticated users
+      logAccess(user, pkg, action, false)
+      callback(null, false)
+      return
+    }
+
+    const requiredGroups = pkg[action] as string[] | undefined
+    const userGroups = await this.cache.getGroups(user.name)
+    const grant = !!requiredGroups?.some((group) => userGroups.includes(group))
+
+    logAccess(user, pkg, action, grant)
+    callback(null, grant)
+  }
+
+  /**
+   * pluginUtils.Auth
+   */
+  async allow_access(
+    user: RemoteUser,
+    pkg: Package,
+    callback: pluginUtils.AccessCallback,
+  ): Promise<void> {
+    await this._allow(user, pkg, "access", callback)
+  }
+
   /**
    * IPluginAuth
    */
-  allow_access(
+  async allow_publish(
     user: RemoteUser,
-    config: AllowAccess & PackageAccess,
-    callback: AuthAccessCallback,
-  ): void {
-    if (config.access) {
-      const grant = config.access.some((group) => user.groups.includes(group))
-      callback(null, grant)
-    } else {
-      callback(null, true)
+    pkg: Package,
+    callback: pluginUtils.AccessCallback,
+  ): Promise<void> {
+    await this._allow(user, pkg, "publish", callback)
+  }
+
+  /**
+   * IPluginAuth
+   */
+  async allow_unpublish(
+    user: RemoteUser,
+    pkg: Package,
+    callback: pluginUtils.AccessCallback,
+  ): Promise<void> {
+    if (pkg.unpublish === false) {
+      // let verdaccio's default behavior call allow_publish() for authentication
+      logAccess(user, pkg, "unpublish", false)
+      callback(null, undefined)
+      return
     }
+
+    if (pkg.unpublish === true) {
+      // `true` is not a valid value - this should never happen - Verdaccio shouldn't even allow us to end up here
+      // this here mostly to satisfy TypeScript and avoid an `as string[]` cast below
+      logAccess(user, pkg, "unpublish", false)
+      callback(
+        errorUtils.getInternalError("Invalid package unpublish configuration"),
+        false,
+      )
+      return
+    }
+
+    await this._allow(user, pkg, "unpublish", callback)
   }
 }

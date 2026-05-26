@@ -2,15 +2,25 @@ import { exchangeWebFlowCode } from "@octokit/oauth-methods"
 import { request } from "@octokit/request"
 import { Octokit } from "octokit"
 import { logger } from "../../logger"
+import { fetchWithProxySupport } from "../proxy"
 
 export class GitHubClient {
-  constructor(
-    private readonly webBaseUrl: string,
-    private readonly apiBaseUrl: string,
-  ) {}
+  private readonly webBaseUrl: string
+  private readonly apiBaseUrl: string
+
+  constructor(webBaseUrl: string, apiBaseUrl: string) {
+    this.webBaseUrl = webBaseUrl
+    this.apiBaseUrl = apiBaseUrl
+  }
 
   private createOktokit(accessToken: string) {
-    return new Octokit({ auth: accessToken, baseUrl: this.apiBaseUrl })
+    return new Octokit({
+      auth: accessToken,
+      baseUrl: this.apiBaseUrl,
+
+      // https://github.com/octokit/octokit.js#proxy-servers-nodejs-only
+      request: { fetch: fetchWithProxySupport },
+    })
   }
 
   /**a
@@ -31,6 +41,9 @@ export class GitHubClient {
         code,
         request: request.defaults({
           baseUrl: this.webBaseUrl,
+
+          // https://github.com/octokit/request.js?tab=readme-ov-file#set-a-custom-agent-to-your-requests
+          request: { fetch: fetchWithProxySupport },
         }),
       })
     } catch (error) {
