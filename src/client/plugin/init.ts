@@ -1,7 +1,6 @@
 import { loginHref, logoutHref } from "../../constants"
 import {
   clearCredentials,
-  Credentials,
   isLoggedIn,
   isTokenExpired,
   saveCredentials,
@@ -22,7 +21,7 @@ function saveAndRemoveCookies() {
   localStorage.removeItem('token')
   localStorage.removeItem('npm')
 
-  const credentials: Credentials = parseCookies(document.cookie) as any
+  const credentials = parseCookies(document.cookie)
   if (!validateCredentials(credentials)) {
     return
   }

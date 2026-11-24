@@ -10,9 +10,8 @@ import {
 import { Plugin } from "src/server/plugin/Plugin"
 import { Verdaccio } from "src/server/plugin/Verdaccio"
 import timekeeper from "timekeeper"
-import Auth from "verdaccio/build/lib/auth"
-import { afterEach, beforeEach, vi } from "vitest"
-import { PartialDeep } from "type-fest"
+import { Auth } from "@verdaccio/auth"
+import { afterEach, beforeEach, mock } from "bun:test"
 
 export const testOrgGroup = `github/org/TEST_ORG`
 export const testOrgTeamGroup = `github/org/TEST_ORG/team/TEST_TEAM`
@@ -65,6 +64,10 @@ export function createTestPluginConfig(
   }
 }
 
+type PartialDeep<T> = T extends object
+  ? { [K in keyof T]?: PartialDeep<T[K]> }
+  : T
+
 export function createTestVerdaccioConfig(
   verdaccioConfig: PartialDeep<VerdaccioGithubOauthConfig> = {},
   pluginConfig: Partial<PluginConfig> = {},
@@ -99,8 +102,8 @@ export function createTestVerdaccio(
   config: Partial<VerdaccioGithubOauthConfig> = {},
 ) {
   const verdaccio = new Verdaccio(createTestVerdaccioConfig(config))
-  verdaccio.issueUiToken = vi.fn(() => Promise.resolve(testUiToken))
-  verdaccio.issueNpmToken = vi.fn(() => Promise.resolve(testNpmToken))
+  verdaccio.issueUiToken = mock(() => Promise.resolve(testUiToken))
+  verdaccio.issueNpmToken = mock(() => Promise.resolve(testNpmToken))
   return verdaccio
 }
 
@@ -112,7 +115,7 @@ export function createTestAuthProvider() {
     getLoginUrl() {
       return testLoginUrl
     },
-    getCode(req: Request) {
+    getCode(_req: Request) {
       return testOAuthCode
     },
     async getToken(code: string) {
@@ -157,9 +160,12 @@ export function createTestPackage(
   }
 }
 
-// @ts-ignore ignore private method override error.
 class PatchedAuth extends Auth {
-  constructor(config: any, logger: any, options: any) {
+  constructor(
+    config: ConstructorParameters<typeof Auth>[0],
+    logger: ConstructorParameters<typeof Auth>[1],
+    options?: ConstructorParameters<typeof Auth>[2],
+  ) {
     super(config, logger, options)
   }
 
@@ -176,10 +182,9 @@ export function createRealVerdaccioAuth(
     {
       secret: "a".repeat(32 /* TOKEN_VALID_LENGTH */),
       ...config,
-    },
-    {},
-    {},
-  ) as any
+    } as ConstructorParameters<typeof Auth>[0],
+    {} as ConstructorParameters<typeof Auth>[1],
+  )
 }
 
 export function freezeTimeDuringTests(date: Date = new Date(0)) {

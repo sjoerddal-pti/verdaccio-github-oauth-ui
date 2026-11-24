@@ -38,6 +38,7 @@ export class WebFlow implements IPluginMiddleware {
    */
   register_middlewares(app: Application) {
     app.get(getAuthorizePath(), this.authorize)
+    app.get(getAuthorizePath(":id"), this.authorize)
     app.get(getCallbackPath(), this.callback)
   }
 
@@ -94,7 +95,8 @@ export class WebFlow implements IPluginMiddleware {
 
   private getRedirectUrl(req: Request): string {
     const baseUrl = getBaseUrl(this.config, req)
-    const path = getCallbackPath(req.params.id)
+    const id = req.params.id
+    const path = getCallbackPath(typeof id === "string" ? id : undefined)
     const redirectUrl = baseUrl + path
 
     return redirectUrl

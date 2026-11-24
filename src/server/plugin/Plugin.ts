@@ -5,10 +5,14 @@ import { logger } from "../../logger"
 import { CliFlow, WebFlow } from "../flows"
 import { GitHubAuthProvider } from "../github"
 import { Cache } from "./Cache"
-import { VerdaccioGithubOauthConfig, ParsedPluginConfig } from "./Config"
+import {
+  VerdaccioGithubOauthConfig,
+  ParsedPluginConfig,
+  resolveVerdaccioConfig,
+} from "./Config"
 import { PatchHtml } from "./PatchHtml"
 import { ServeStatic } from "./ServeStatic"
-import { Verdaccio } from "./Verdaccio"
+import { type Auth, Verdaccio } from "./Verdaccio"
 import { createAuthenticatedUser } from "../helpers"
 
 type Package = PackageAccess & (AllowAccess | VerdaccioGithubOauthConfig)
@@ -34,7 +38,7 @@ function logAccess(
 export class Plugin
   extends pluginUtils.Plugin<VerdaccioGithubOauthConfig>
   implements
-    pluginUtils.ExpressMiddleware<VerdaccioGithubOauthConfig, any, any>,
+    pluginUtils.ExpressMiddleware<VerdaccioGithubOauthConfig, unknown, Auth>,
     pluginUtils.Auth<VerdaccioGithubOauthConfig>
 {
   private readonly parsedConfig: ParsedPluginConfig
@@ -44,20 +48,21 @@ export class Plugin
 
   constructor(
     readonly config: VerdaccioGithubOauthConfig,
-    options?: any,
+    options?: { config?: VerdaccioGithubOauthConfig },
   ) {
-    super(config, options)
+    super(config, (options ?? {}) as unknown as pluginUtils.PluginOptions)
 
-    this.parsedConfig = new ParsedPluginConfig(this.config)
+    const verdaccioConfig = resolveVerdaccioConfig(config, options)
+    this.parsedConfig = new ParsedPluginConfig(verdaccioConfig)
     this.provider = new GitHubAuthProvider(this.parsedConfig)
     this.cache = new Cache(this.provider, this.parsedConfig.cacheTTLms)
-    this.verdaccio = new Verdaccio(this.config)
+    this.verdaccio = new Verdaccio(verdaccioConfig)
   }
 
   /**
    * pluginUtils.ExpressMiddleware
    */
-  register_middlewares(app: Application, auth: any) {
+  register_middlewares(app: Application, auth: Auth) {
     this.verdaccio.setAuth(auth)
 
     const children = [

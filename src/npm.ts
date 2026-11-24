@@ -1,26 +1,43 @@
 import { execSync } from "child_process"
-import minimist from "minimist"
-import { URL } from "url"
+import { parseArgs } from "node:util"
+
+import Config from "@npmcli/config"
+import {
+  definitions,
+  flatten,
+  shorthands,
+} from "@npmcli/config/lib/definitions"
 
 import { logger } from "./logger"
 
-let npmConfig: any
+let npmConfig: { registry?: string; userconfig?: string } | undefined
 
 function parseCliArgs() {
-  return minimist(process.argv.slice(2))
+  const { values } = parseArgs({
+    args: process.argv.slice(2),
+    strict: false,
+    options: {
+      registry: { type: "string" },
+    },
+  })
+
+  return values
 }
 
 function runCommand(command: string) {
   logger.log(`Running command: ${command}`)
+
   return execSync(command).toString()
 }
 
 function getNpmConfig() {
   if (!npmConfig) {
     const npmConfigJson = runCommand("npm config list --json")
+
     npmConfig = JSON.parse(npmConfigJson)
   }
-  return npmConfig
+
+  return npmConfig ?? {}
 }
 
 function removeTrailingSlash(input: string) {
@@ -30,7 +47,14 @@ function removeTrailingSlash(input: string) {
 export function getRegistryUrl() {
   const cliArgs = parseCliArgs()
 
-  const registry = cliArgs.registry || getNpmConfig().registry
+  const registry =
+    typeof cliArgs.registry === "string"
+      ? cliArgs.registry
+      : getNpmConfig().registry
+
+  if (typeof registry !== "string") {
+    throw new Error("No npm registry configured")
+  }
 
   return removeTrailingSlash(registry)
 }
@@ -39,16 +63,27 @@ export function getNpmConfigFile() {
   return getNpmConfig().userconfig
 }
 
-export function getNpmSaveCommand(registry: string, token: string) {
-  const url = new URL(registry)
-  const baseUrl = url.host + url.pathname
+async function loadNpmCliConfig() {
+  const config = new Config({
+    argv: ["node", "npm"],
+    definitions,
+    flatten,
+    npmPath: process.cwd(),
+    shorthands,
+  })
 
-  return `npm config set //${baseUrl}:_authToken "${token}"`
+  await config.load()
+
+  return config
 }
 
-export function saveNpmToken(token: string) {
+export async function saveNpmToken(token: string) {
   const registry = getRegistryUrl()
-  const command = getNpmSaveCommand(registry, token)
+  const config = await loadNpmCliConfig()
+  const url = new URL(registry)
+  const key = `//${url.host}${url.pathname}:_authToken`
 
-  runCommand(command)
+  config.set(key, token, "user")
+
+  await config.save("user")
 }

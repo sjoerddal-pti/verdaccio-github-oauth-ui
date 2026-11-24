@@ -1,11 +1,9 @@
 import { getAuthorizePath, getCallbackPath } from "src/redirect"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "bun:test"
 
 describe("redirect", () => {
   it("getAuthorizePath", () => {
-    expect(getAuthorizePath()).toMatchInlineSnapshot(
-      `"/-/oauth/authorize/:id?"`,
-    )
+    expect(getAuthorizePath()).toMatchInlineSnapshot(`"/-/oauth/authorize"`)
     expect(getAuthorizePath("auth-id")).toMatchInlineSnapshot(
       `"/-/oauth/authorize/auth-id"`,
     )

@@ -1,6 +1,7 @@
-import { afterEach } from "node:test"
+import { Request } from "express"
 import { getBaseUrl } from "src/server/helpers"
-import { beforeEach, describe, expect, it } from "vitest"
+import { ParsedPluginConfig } from "src/server/plugin/Config"
+import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 
 describe("getBaseUrl", () => {
   beforeEach(() => {
@@ -12,13 +13,19 @@ describe("getBaseUrl", () => {
   })
 
   it("builds the correct url using VERDACCIO_PUBLIC_URL", () => {
-    const baseUrl = getBaseUrl({ url_prefix: "" } as any, {} as any)
+    const baseUrl = getBaseUrl(
+      { url_prefix: "" } as ParsedPluginConfig,
+      {} as Request,
+    )
 
     expect(baseUrl).toMatchInlineSnapshot(`"http://verdaccio.public.url"`)
   })
 
   it("builds the correct url using VERDACCIO_PUBLIC_URL and url_prefix", () => {
-    const baseUrl = getBaseUrl({ url_prefix: "/verdaccio" } as any, {} as any)
+    const baseUrl = getBaseUrl(
+      { url_prefix: "/verdaccio" } as ParsedPluginConfig,
+      {} as Request,
+    )
 
     expect(baseUrl).toMatchInlineSnapshot(
       `"http://verdaccio.public.url/verdaccio"`,
@@ -26,7 +33,10 @@ describe("getBaseUrl", () => {
   })
 
   it("doesn't produce duplicate slashes using VERDACCIO_PUBLIC_URL and url_prefix", () => {
-    const baseUrl = getBaseUrl({ url_prefix: "/verdaccio/" } as any, {} as any)
+    const baseUrl = getBaseUrl(
+      { url_prefix: "/verdaccio/" } as ParsedPluginConfig,
+      {} as Request,
+    )
 
     expect(baseUrl).toMatchInlineSnapshot(
       `"http://verdaccio.public.url/verdaccio"`,
