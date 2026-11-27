@@ -99,6 +99,48 @@ describe("Cache", () => {
       expect(groups).toEqual([])
     })
 
+    it("does not cache a failed lookup", async () => {
+      configureFailingProvider()
+
+      await cache.getGroups(testOAuthToken)
+      await cache.getGroups(testOAuthToken)
+
+      expect(provider.getGroups).toHaveBeenCalledTimes(2)
+    })
+
+    it("shares one lookup between concurrent requests", async () => {
+      const expectedGroups = ["some-group"]
+      const { promise, resolve } = Promise.withResolvers<string[]>()
+      provider = createTestAuthProvider()
+      provider.getGroups = mock(() => promise)
+      cache = new Cache(provider, cacheTTLms)
+
+      const requests = [1, 2, 3].map(() => cache.getGroups(testOAuthToken))
+      resolve(expectedGroups)
+      const results = await Promise.all(requests)
+
+      expect(provider.getGroups).toHaveBeenCalledTimes(1)
+      expect(results).toEqual([expectedGroups, expectedGroups, expectedGroups])
+    })
+
+    it("looks up again after a shared lookup failed", async () => {
+      provider = createTestAuthProvider()
+      provider.getGroups = mock()
+        .mockRejectedValueOnce(new Error(testErrorMessage))
+        .mockResolvedValueOnce(["some-group"])
+      cache = new Cache(provider, cacheTTLms)
+
+      const failed = await Promise.all([
+        cache.getGroups(testOAuthToken),
+        cache.getGroups(testOAuthToken),
+      ])
+      const groups = await cache.getGroups(testOAuthToken)
+
+      expect(failed).toEqual([[], []])
+      expect(groups).toEqual(["some-group"])
+      expect(provider.getGroups).toHaveBeenCalledTimes(2)
+    })
+
     it("distinguishes between different tokens", async () => {
       configureSucceedingProvider((token) => [token])
 

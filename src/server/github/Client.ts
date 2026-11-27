@@ -4,6 +4,36 @@ import { Octokit } from "octokit"
 import { logger } from "../../logger"
 import { fetchWithProxySupport } from "../proxy"
 
+/**
+ * A failed membership request only proves that the user is not a member when
+ * GitHub answered with a client error such as 404. Rate limits, server errors
+ * and network failures say nothing about membership, so they must not be
+ * reported (and cached) as "not a member".
+ */
+export function isInconclusiveError(error: unknown): boolean {
+  const { status, response, message } = (error ?? {}) as {
+    status?: unknown
+    response?: { headers?: Record<string, unknown> }
+    message?: unknown
+  }
+
+  if (typeof status !== "number") {
+    return true // no response, e.g. network failure or timeout
+  }
+  if (status >= 500 || status === 429) {
+    return true
+  }
+  if (status === 403) {
+    const headers = response?.headers ?? {}
+    return (
+      String(headers["x-ratelimit-remaining"]) === "0" ||
+      headers["retry-after"] !== undefined ||
+      /rate limit/i.test(String(message))
+    )
+  }
+  return false
+}
+
 export class GitHubClient {
   private readonly webBaseUrl: string
   private readonly apiBaseUrl: string
@@ -94,6 +124,9 @@ export class GitHubClient {
       logger.log(
         `Failed requesting GitHub organization "${org}" membership status of user "${username}": ${error.message}`,
       )
+      if (isInconclusiveError(error)) {
+        throw error
+      }
       return false
     }
   }
@@ -121,6 +154,9 @@ export class GitHubClient {
       logger.log(
         `Failed requesting GitHub team "${org}/${team_slug}" membership status of user "${username}": ${error.message}`,
       )
+      if (isInconclusiveError(error)) {
+        throw error
+      }
       return false
     }
   }
@@ -148,6 +184,9 @@ export class GitHubClient {
       logger.log(
         `Failed requesting GitHub repository "${owner}/${repo}" membership status of user "${username}": ${error.message}`,
       )
+      if (isInconclusiveError(error)) {
+        throw error
+      }
       return false
     }
   }

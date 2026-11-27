@@ -8,14 +8,16 @@ import { AuthProvider } from "./AuthProvider"
  * on each package request, this would slow down the process a lot and we would
  * likely hit a request limit with the auth provider.
  *
- * Therefore authentication is only performed once and is cached until no request
- * has been made for a short period.
+ * Therefore the groups of a user are fetched once and cached for a short
+ * period. Requests that arrive while the groups are being fetched share that
+ * one lookup, and a failed lookup is not cached.
  */
 export class Cache {
   private readonly cache = new Map<
     string,
     { value: string[]; expire: number }
   >()
+  private readonly pending = new Map<string, Promise<string[]>>()
   private readonly authProvider: AuthProvider
   private readonly cacheTTLms: number
 
@@ -28,26 +30,37 @@ export class Cache {
   }
 
   async getGroups(userName: string): Promise<string[]> {
-    let groups: string[] | null = null
-
     try {
       const providerId = this.authProvider.getId()
       const key = `${providerId}/${userName}`
 
       const hit = this.cache.get(key)
       if (hit && hit.expire >= Date.now()) {
-        groups = hit.value
-      } else {
-        groups = (await this.authProvider.getGroups(userName)) || []
-        this.cache.set(key, {
-          value: groups,
-          expire: Date.now() + this.cacheTTLms,
-        })
+        return hit.value
       }
+
+      let lookup = this.pending.get(key)
+      if (!lookup) {
+        lookup = this.fetchGroups(key, userName)
+        this.pending.set(key, lookup)
+      }
+      return await lookup
     } catch (error) {
       logger.error(error)
+      return []
     }
+  }
 
-    return groups || []
+  private async fetchGroups(key: string, userName: string): Promise<string[]> {
+    try {
+      const groups = (await this.authProvider.getGroups(userName)) || []
+      this.cache.set(key, {
+        value: groups,
+        expire: Date.now() + this.cacheTTLms,
+      })
+      return groups
+    } finally {
+      this.pending.delete(key)
+    }
   }
 }
